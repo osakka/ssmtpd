@@ -1,0 +1,141 @@
+#!/bin/bash
+# Omar's Little Shell SMTP Server.
+# (mid-jun2002) All-Rights Reserved.
+# This code is still pre ALPHA!
+# !/bin/bash -x For trace during runtime.
+#
+# Please refer to the man page in section (8) for more details.
+# In no place in this script has stdout/stderr been redirected to a
+# null device.  This is to ensure a clean runtime throughout.
+#
+# Copyright <A9> 2001 Omar Al-Sakka.  This is free software.  There is  NO
+# warranty;  not  even  for  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE
+# Copying of this code is prohibited.  Authorisation from the author IS
+# required before the use of any code-snippets... 
+
+### System Commands.
+declare -r writeln="echo";
+declare -r write="echo -en";
+declare -r sys_cat="/bin/cat";
+declare -r sys_file_id="/usr/bin/file -ib";
+declare -r delete_file="/bin/rm";
+declare -r stat_file="/usr/bin/stat -t";
+declare -r sys_date=`/bin/date -uR`;
+### Directories.
+declare -r ssmtpd_dir="/usr/local/pkg/ssmtpd";
+declare -r spool_dir="$ssmtpd_dir/var";
+declare -r cfg_dir="$ssmtpd_dir/etc";
+declare -r tmp_dir="$ssmtpd_dir/tmp";
+declare -r log_dir="$ssmtpd_dir/log"
+### Other Declares.
+declare -r server_id="ssmtpd 0.1a";
+declare -r postmaster="postmaster";
+declare -r session="$$$RANDOM";
+### Log Files.
+declare -r access_log="$log_dir/access.log";
+declare -r error_log="$log_dir/error.log";
+declare -r debug_log="$log_dir/debug.log";
+### Runtime Variables.
+declare -a client_input;
+declare mail_ok="0";
+declare rcpt_ok="0";
+
+#exec 2>> $debug_log ### Server Internal Error Log.
+umask u+rw;         ### Set default file creation att.
+set -P;             ### -P (no sym for cd++)
+set -m;             ### monitor.
+set +B;             ### No brace Expand.
+set +h;             ### No Hash All.
+
+# Read an input line.
+##############################################################################
+function readln() {
+  client_input="";
+  read -n 240 -a client_input;
+  [ "${#client_input}" -lt "2" ] && return 1;
+  return 0;
+}
+
+# Verify remote/local user.
+##############################################################################
+function verify_user() {
+  case "${client_input[2]}" in
+    *) echo "need to check this data...";
+  esac
+}
+
+# Start dump of email data.
+##############################################################################
+function dtdump() {
+  # Check if Mail has been specified.
+  if [ "$mail_ok" ]; then
+    $writeln "503 MAIL first (#5.5.1)";
+    return 1;
+  fi
+  # Check if Rcpt has been specified.
+  if [ "$rcpt_to" ]; then
+    $writeln "503 RCPT first (#5.5.1)";
+    return 1;
+  fi
+  # Allow the entry of data.
+  $writeln "354 go ahead";
+  while ! [ "$client_input" = "." ]; do
+    readln;
+    $writeln $client_input >> $tmp_dir/d.$session;
+  done;
+  $writeln "250 ok $session ssmtpd(p) $$";
+  # Reset The Runtime Variables, and files.
+  mail_ok="0"; rcpt_ok="0";
+  [ -e "$tmp_dir/h.$session" ] && $sys_delete "$tmp_dir/h.$session";
+  [ -e "$tmp_dir/d.$session" ] && $sys_delete "$tmp_dir/d.$session";
+  return 0;
+}
+
+# Dump of email header.
+##############################################################################
+function hddump() {
+  case "${client_input[1]}" in
+    FROM\ :|FROM:|FROM|From\ :|From:|From|from\ :|from:|from) 
+      $writeln "Checking sender details...";
+      ;;
+    TO\ :|TO:|TO|To\ :|To:|To|to\ :|to:|to) 
+      $writeln "Checking receiver details...";
+      ;;
+    *) $writeln "250 ok"; ;;
+  esac
+  $writeln $client_input >> $tmp_dir/h.$session;
+}
+
+###
+### Main.
+##############################################################################
+  trap "" 2 3 4 6 8 9 13 15 20;
+  $writeln "220 $HOSTNAME ESMTP";
+  inline_counter=0;
+  inline=0;
+  while true; do
+    readln;
+    case "${client_input[0]}" in
+      MAIL|Mail|mail) mail_ok="1"; hddump; ;;
+      RCPT|Rcpt|rcpt) rcpt_ok="1"; hddump; ;;
+      DATA|Data|data) dtdump; ;;
+      HELO|Helo|helo) $writeln "250 $HOSTNAME"; ;;
+      NOOP|Noop|noop) $writeln "250 ok"; ;;
+      VRFY|Vrfy|vrfy) $writeln "252 send some mail, i'll try my best"; ;;
+      EHLO|Ehlo|ehlo) $writeln "250 $HOSTNAME\n250-PIPELINING\n250 8BITMIME"; ;;
+      HELP|Help|help) $writeln "214 $server_id"; 
+                      $sys_cat $cfg_dir/help; ;;
+      RSET|Rset|rset) mail_ok="0"; rcpt_ok="0";
+                      [ -e "$tmp_dir/h.$session" ] && $sys_delete "$tmp_dir/h.$session";
+                      [ -e "$tmp_dir/d.$session" ] && $sys_delete "$tmp_dir/d.$session";
+                      $writeln "250 flushed"; ;;
+      QUIT|Quit|quit) [ -e "$tmp_dir/h.$session" ] && $sys_delete "$tmp_dir/h.$session";
+                      [ -e "$tmp_dir/d.$session" ] && $sys_delete "$tmp_dir/d.$session";
+                      $writeln "221 $HOSTNAME"; 
+                      exit; ;;
+                   *) $writeln "502 unimplemented (#5.5.1)"; ;;
+    esac
+  done;
+##############################################################################
+### End.
+###

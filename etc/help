@@ -1,0 +1,7 @@
+
+MAIL - TO/FROM - Specify header information.
+RCPT - TO/FROM - Specify header information.
+DATA - Start Data Section of Email, and terminate with '.'.
+HELP - Display this help.
+QUIT - Exit SMTP Server.
+
